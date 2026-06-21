@@ -1,189 +1,368 @@
-import { useState } from 'react';
-import { MessageSquare, Send, Copy, Download } from 'lucide-react';
-import axios from 'axios';
+import { useState, useRef, useEffect } from 'react';
+import { Scale, Send, Copy, Download, RotateCcw, Bot, User, ChevronDown } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
+import { useAuth } from '../contexts/AuthContext';
+import { useNavigate } from 'react-router-dom';
 
+// ── types ──────────────────────────────────────────────────────────────────────
+interface ChatMessage {
+    role: 'user' | 'assistant';
+    content: string;
+    isStreaming?: boolean;
+}
+
+// Gemini history format for multi-turn
+interface GeminiTurn {
+    role: 'user' | 'model';
+    parts: { text: string }[];
+}
+
+const REGIONS = [
+    'Addis Ababa', 'Tigray', 'Oromia', 'Amhara', 'SNNPR',
+    'Afar', 'Somali', 'Benishangul-Gumuz', 'Gambella', 'Harari', 'Dire Dawa',
+];
+
+const SUGGESTED = [
+    'My husband is preventing me from working. What are my rights?',
+    'I was dismissed from work after getting pregnant. What can I do?',
+    'My in-laws took my land after my husband died. Is this legal?',
+    'I want to file for divorce but have no money for a lawyer.',
+];
+
+const API_BASE = 'http://localhost:8000';
+
+// ── shared SSE streaming helper ────────────────────────────────────────────────
+async function streamSSE(
+    url: string,
+    body: object,
+    token: string,
+    onChunk: (text: string) => void,
+    signal: AbortSignal,
+): Promise<void> {
+    const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(body),
+        signal,
+    });
+
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error((err as any).detail ?? `Server error ${res.status}`);
+    }
+
+    const reader = res.body!.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n\n');
+        buffer = lines.pop() ?? '';
+
+        for (const line of lines) {
+            if (!line.startsWith('data:')) continue;
+            const jsonStr = line.replace(/^data:\s*/, '').trim();
+            if (!jsonStr) continue;
+            const parsed = JSON.parse(jsonStr);
+            if (parsed.error) throw new Error(parsed.error);
+            if (parsed.done) return;
+            if (parsed.chunk) onChunk(parsed.chunk);
+        }
+    }
+}
+
+// ── component ──────────────────────────────────────────────────────────────────
 const LegalAdvisor = () => {
-    const [description, setDescription] = useState('');
+    const { token, isAuthenticated } = useAuth();
+    const navigate = useNavigate();
+
+    const [messages, setMessages] = useState<ChatMessage[]>([]);
+    const [geminiHistory, setGeminiHistory] = useState<GeminiTurn[]>([]);
+    const [input, setInput] = useState('');
     const [region, setRegion] = useState('');
-    const [advice, setAdvice] = useState('');
-    const [loading, setLoading] = useState(false);
+    const [streaming, setStreaming] = useState(false);
     const [error, setError] = useState('');
+    const [showRegion, setShowRegion] = useState(false);
 
-    const regions = [
-        'Addis Ababa',
-        'Tigray',
-        'Oromia',
-        'Amhara',
-        'SNNPR',
-        'Afar',
-        'Somali',
-        'Benishangul-Gumuz',
-        'Gambella',
-        'Harari',
-        'Dire Dawa'
-    ];
+    const chatEndRef = useRef<HTMLDivElement>(null);
+    const textareaRef = useRef<HTMLTextAreaElement>(null);
+    const abortRef = useRef<AbortController | null>(null);
 
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
-        setLoading(true);
+    const isFirstMessage = messages.length === 0;
+
+    useEffect(() => {
+        chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, [messages]);
+
+    // auto-resize textarea
+    useEffect(() => {
+        const el = textareaRef.current;
+        if (el) { el.style.height = 'auto'; el.style.height = `${Math.min(el.scrollHeight, 160)}px`; }
+    }, [input]);
+
+    // ── send message ──────────────────────────────────────────────────────────────
+    const sendMessage = async (text: string) => {
+        if (!text.trim() || streaming) return;
+        if (!isAuthenticated) { navigate('/login'); return; }
+
         setError('');
-        setAdvice('');
+        const userMsg: ChatMessage = { role: 'user', content: text };
+        const assistantMsg: ChatMessage = { role: 'assistant', content: '', isStreaming: true };
+        setMessages(prev => [...prev, userMsg, assistantMsg]);
+        setInput('');
+        setStreaming(true);
+
+        abortRef.current = new AbortController();
+        let fullResponse = '';
 
         try {
-            const response = await axios.post('http://localhost:8000/api/legal-advice', {
-                description,
-                region: region || null
-            });
-
-            setAdvice(response.data.advice);
-        } catch (error: any) {
-            console.error('Error getting legal advice:', error);
-            if (error.response?.status === 503) {
-                setError('AI service is currently unavailable. Please check your GEMINI_API_KEY configuration.');
-            } else if (error.response?.status === 500) {
-                setError('Error generating legal advice. Please try again.');
-            } else if (error.code === 'ERR_NETWORK') {
-                setError('Network error. Please check your connection and try again.');
-            } else {
-                setError('Error generating legal advice. Please try again.');
-            }
+            await streamSSE(
+                `${API_BASE}/api/legal-advice-stream`,
+                { description: text, region: region || '', history: geminiHistory },
+                token!,
+                (chunk) => {
+                    fullResponse += chunk;
+                    setMessages(prev => {
+                        const updated = [...prev];
+                        updated[updated.length - 1] = { ...updated[updated.length - 1], content: updated[updated.length - 1].content + chunk };
+                        return updated;
+                    });
+                },
+                abortRef.current.signal,
+            );
+        } catch (err: any) {
+            if (err.name === 'AbortError') return;
+            setError(err.message ?? 'Something went wrong. Please try again.');
+            setMessages(prev => prev.slice(0, -1));
         } finally {
-            setLoading(false);
+            // mark done + update gemini history for multi-turn
+            setMessages(prev => {
+                const updated = [...prev];
+                const last = updated[updated.length - 1];
+                if (last?.role === 'assistant') updated[updated.length - 1] = { ...last, isStreaming: false };
+                return updated;
+            });
+            if (fullResponse) {
+                setGeminiHistory(prev => [
+                    ...prev,
+                    { role: 'user', parts: [{ text }] },
+                    { role: 'model', parts: [{ text: fullResponse }] },
+                ]);
+            }
+            setStreaming(false);
         }
     };
 
-    const copyToClipboard = (text: string) => {
-        navigator.clipboard.writeText(text);
-        alert('Legal advice copied to clipboard!');
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(input); }
     };
 
-    const downloadAdvice = (text: string) => {
+    const handleReset = () => {
+        abortRef.current?.abort();
+        setMessages([]);
+        setGeminiHistory([]);
+        setInput('');
+        setError('');
+        setStreaming(false);
+    };
+
+    // ── copy / download ────────────────────────────────────────────────────────────
+    const copyMsg = (text: string) => { navigator.clipboard.writeText(text); };
+    const downloadMsg = (text: string) => {
         const blob = new Blob([text], { type: 'text/plain' });
-        const url = window.URL.createObjectURL(blob);
+        const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
-        a.href = url;
-        a.download = 'legal-advice.txt';
-        document.body.appendChild(a);
-        a.click();
-        window.URL.revokeObjectURL(url);
-        document.body.removeChild(a);
+        a.href = url; a.download = 'legal-advice.txt'; a.click(); URL.revokeObjectURL(url);
     };
 
+    // ── render ────────────────────────────────────────────────────────────────────
     return (
-        <div className="py-10">
-            <div className="max-w-4xl mx-auto px-5">
-                <div className="text-center mb-10">
-                    <MessageSquare className="w-12 h-12 text-primary-500 mb-4 mx-auto" />
-                    <h1 className="text-4xl font-bold text-gray-900 mb-3">AI Legal Advisor</h1>
-                    <p className="text-lg text-gray-600 max-w-2xl mx-auto">
-                        Get personalized legal advice based on Ethiopian law and women's rights.
-                        Our AI will analyze your situation and provide actionable guidance.
+        <div className="py-6">
+            <div className="max-w-3xl mx-auto px-4 flex flex-col" style={{ height: 'calc(100vh - 88px)' }}>
+
+                {/* Header */}
+                <div className="text-center mb-5">
+                    <div className="flex items-center justify-center gap-2 mb-2">
+                        <Scale className="w-7 h-7 text-primary-500" />
+                        <h1 className="text-2xl font-bold text-gray-900">AI Legal Advisor</h1>
+                    </div>
+                    <p className="text-sm text-gray-500">
+                        Personalized legal guidance based on Ethiopian law and women's rights
                     </p>
                 </div>
 
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                    {/* Input Form */}
-                    <div className="card">
-                        <h2 className="text-2xl font-bold text-gray-900 mb-6">Describe Your Situation</h2>
+                {/* Chat window */}
+                <div className="flex-1 flex flex-col card p-0 overflow-hidden min-h-0">
 
-                        <form onSubmit={handleSubmit} className="space-y-6">
-                            <div>
-                                <label htmlFor="description" className="block text-sm font-medium text-gray-700 mb-2">
-                                    Case Description *
-                                </label>
-                                <textarea
-                                    id="description"
-                                    value={description}
-                                    onChange={(e) => setDescription(e.target.value)}
-                                    required
-                                    rows={8}
-                                    className="form-textarea w-full"
-                                    placeholder="Describe your legal situation in detail. Include relevant facts, dates, and any specific questions you have..."
-                                />
-                            </div>
-
-                            <div>
-                                <label htmlFor="region" className="block text-sm font-medium text-gray-700 mb-2">
-                                    Region (Optional)
-                                </label>
-                                <select
-                                    id="region"
-                                    value={region}
-                                    onChange={(e) => setRegion(e.target.value)}
-                                    className="form-select w-full"
-                                >
-                                    <option value="">Select a region</option>
-                                    {regions.map((region) => (
-                                        <option key={region} value={region}>{region}</option>
-                                    ))}
-                                </select>
-                            </div>
-
+                    {/* Top bar */}
+                    <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-gray-50 flex-shrink-0">
+                        <div className="flex items-center gap-2">
+                            <Bot className="w-4 h-4 text-primary-500" />
+                            <span className="text-sm font-semibold text-gray-700">Netsanet Legal Advisor</span>
+                            {streaming && (
+                                <span className="flex items-center gap-1 text-xs text-primary-600 font-medium">
+                                    <span className="relative flex h-2 w-2">
+                                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary-400 opacity-75" />
+                                        <span className="relative inline-flex rounded-full h-2 w-2 bg-primary-500" />
+                                    </span>
+                                    Thinking…
+                                </span>
+                            )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                            {/* Region selector */}
                             <button
-                                type="submit"
-                                disabled={loading || !description.trim()}
-                                className="btn btn-primary w-full"
+                                onClick={() => setShowRegion(v => !v)}
+                                className="flex items-center gap-1 text-xs text-gray-500 border border-gray-200 rounded-full px-3 py-1 hover:bg-gray-100 transition-colors"
                             >
-                                {loading ? (
-                                    <>
-                                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                                        Getting Legal Advice...
-                                    </>
-                                ) : (
-                                    <>
-                                        <Send className="w-4 h-4 mr-2" />
-                                        Get Legal Advice
-                                    </>
-                                )}
+                                {region || 'Region'}
+                                <ChevronDown className="w-3 h-3" />
                             </button>
-                        </form>
+                            {!isFirstMessage && (
+                                <button
+                                    onClick={handleReset}
+                                    className="flex items-center gap-1 text-xs text-gray-500 border border-gray-200 rounded-full px-3 py-1 hover:bg-gray-100 transition-colors"
+                                >
+                                    <RotateCcw className="w-3 h-3" />
+                                    New chat
+                                </button>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Region dropdown */}
+                    {showRegion && (
+                        <div className="border-b border-gray-100 px-4 py-2 bg-white flex-shrink-0">
+                            <select
+                                value={region}
+                                onChange={e => { setRegion(e.target.value); setShowRegion(false); }}
+                                className="form-select text-sm w-full max-w-xs"
+                            >
+                                <option value="">All regions</option>
+                                {REGIONS.map(r => <option key={r} value={r}>{r}</option>)}
+                            </select>
+                        </div>
+                    )}
+
+                    {/* Messages */}
+                    <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4 min-h-0">
+                        {/* Welcome state */}
+                        {isFirstMessage && (
+                            <div className="flex flex-col items-center justify-center h-full text-center py-8">
+                                <div className="w-14 h-14 rounded-full bg-primary-100 flex items-center justify-center mb-4">
+                                    <Scale className="w-7 h-7 text-primary-500" />
+                                </div>
+                                <h2 className="text-lg font-semibold text-gray-800 mb-1">How can I help you today?</h2>
+                                <p className="text-sm text-gray-500 mb-6 max-w-sm">
+                                    Ask me anything about your legal situation — I'll give you guidance based on Ethiopian law.
+                                </p>
+                                {/* Suggested prompts */}
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full max-w-lg">
+                                    {SUGGESTED.map((s, i) => (
+                                        <button
+                                            key={i}
+                                            onClick={() => sendMessage(s)}
+                                            className="text-left text-sm border border-gray-200 rounded-xl px-3 py-2.5 hover:border-primary-300 hover:bg-primary-50 transition-colors text-gray-600"
+                                        >
+                                            {s}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Message bubbles */}
+                        {messages.map((msg, i) => (
+                            <div key={i} className={`flex gap-3 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                                {msg.role === 'assistant' && (
+                                    <div className="flex-shrink-0 w-7 h-7 rounded-full bg-primary-100 flex items-center justify-center mt-1">
+                                        <Bot className="w-3.5 h-3.5 text-primary-600" />
+                                    </div>
+                                )}
+
+                                <div className={`group max-w-[82%] ${msg.role === 'user' ? '' : ''}`}>
+                                    <div
+                                        className={`rounded-2xl px-4 py-3 text-sm leading-relaxed shadow-sm ${msg.role === 'user'
+                                            ? 'bg-primary-500 text-white rounded-tr-sm'
+                                            : 'bg-white border border-gray-200 text-gray-900 rounded-tl-sm'
+                                            }`}
+                                    >
+                                        {msg.role === 'user' ? (
+                                            <p className="whitespace-pre-wrap">{msg.content}</p>
+                                        ) : (
+                                            <div className="prose prose-sm max-w-none prose-headings:text-gray-900 prose-p:text-gray-800">
+                                                <ReactMarkdown>{msg.content}</ReactMarkdown>
+                                                {msg.isStreaming && (
+                                                    <span className="inline-block w-2 h-4 ml-0.5 bg-primary-400 animate-pulse rounded-sm align-middle" />
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* Action buttons on assistant messages (show on hover, after streaming) */}
+                                    {msg.role === 'assistant' && !msg.isStreaming && msg.content && (
+                                        <div className="flex gap-1 mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                            <button
+                                                onClick={() => copyMsg(msg.content)}
+                                                className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 px-2 py-1 rounded hover:bg-gray-100 transition-colors"
+                                                title="Copy"
+                                            >
+                                                <Copy className="w-3 h-3" /> Copy
+                                            </button>
+                                            <button
+                                                onClick={() => downloadMsg(msg.content)}
+                                                className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 px-2 py-1 rounded hover:bg-gray-100 transition-colors"
+                                                title="Download"
+                                            >
+                                                <Download className="w-3 h-3" /> Save
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {msg.role === 'user' && (
+                                    <div className="flex-shrink-0 w-7 h-7 rounded-full bg-gray-200 flex items-center justify-center mt-1">
+                                        <User className="w-3.5 h-3.5 text-gray-600" />
+                                    </div>
+                                )}
+                            </div>
+                        ))}
 
                         {error && (
-                            <div className="mt-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md">
+                            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">
                                 {error}
                             </div>
                         )}
+                        <div ref={chatEndRef} />
                     </div>
 
-                    {/* AI Response */}
-                    <div className="card">
-                        <h2 className="text-2xl font-bold text-gray-900 mb-6">Legal Advice</h2>
-
-                        {advice ? (
-                            <div className="space-y-4">
-                                <div className="bg-white p-4 rounded-lg border border-gray-200 prose prose-sm max-w-none text-gray-900 leading-relaxed min-h-[300px]">
-                                    <ReactMarkdown>
-                                        {advice}
-                                    </ReactMarkdown>
-                                </div>
-
-                                <div className="flex gap-2">
-                                    <button
-                                        onClick={() => copyToClipboard(advice)}
-                                        className="btn btn-secondary btn-small"
-                                    >
-                                        <Copy className="w-4 h-4" />
-                                        Copy
-                                    </button>
-                                    <button
-                                        onClick={() => downloadAdvice(advice)}
-                                        className="btn btn-secondary btn-small"
-                                    >
-                                        <Download className="w-4 h-4" />
-                                        Download
-                                    </button>
-                                </div>
-                            </div>
-                        ) : (
-                            <div className="text-center py-12">
-                                <MessageSquare className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                                <h3 className="text-lg font-medium text-gray-900 mb-2">No advice generated yet</h3>
-                                <p className="text-gray-600">
-                                    Describe your legal situation and click "Get Legal Advice" to receive personalized guidance.
-                                </p>
-                            </div>
-                        )}
+                    {/* Input bar */}
+                    <div className="flex-shrink-0 border-t border-gray-100 bg-white px-4 py-3">
+                        <div className="flex items-end gap-2 bg-gray-50 border border-gray-200 rounded-2xl px-4 py-2 focus-within:border-primary-400 focus-within:ring-1 focus-within:ring-primary-200 transition-all">
+                            <textarea
+                                ref={textareaRef}
+                                value={input}
+                                onChange={e => setInput(e.target.value)}
+                                onKeyDown={handleKeyDown}
+                                disabled={streaming}
+                                rows={1}
+                                className="flex-1 bg-transparent text-sm text-gray-800 placeholder-gray-400 resize-none outline-none py-1 min-h-[24px]"
+                                placeholder="Describe your situation or ask a follow-up question…"
+                            />
+                            <button
+                                onClick={() => sendMessage(input)}
+                                disabled={!input.trim() || streaming}
+                                className="flex-shrink-0 w-8 h-8 rounded-xl bg-primary-500 hover:bg-primary-600 disabled:bg-gray-200 disabled:cursor-not-allowed flex items-center justify-center transition-colors mb-0.5"
+                            >
+                                <Send className="w-3.5 h-3.5 text-white" />
+                            </button>
+                        </div>
+                        <p className="text-center text-xs text-gray-400 mt-2">
+                            Press <kbd className="bg-gray-100 px-1 rounded text-gray-500">Enter</kbd> to send · <kbd className="bg-gray-100 px-1 rounded text-gray-500">Shift+Enter</kbd> for new line
+                        </p>
                     </div>
                 </div>
             </div>
@@ -191,4 +370,4 @@ const LegalAdvisor = () => {
     );
 };
 
-export default LegalAdvisor; 
+export default LegalAdvisor;
