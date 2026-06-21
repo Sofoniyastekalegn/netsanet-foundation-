@@ -53,23 +53,9 @@ const AppContent = () => {
             <Route path="/login" element={isAuthenticated ? <Navigate to="/" replace /> : <Login />} />
             <Route path="/register" element={isAuthenticated ? <Navigate to="/" replace /> : <Register />} />
 
-            {/* Protected Routes - Require Authentication (for all users) */}
-            <Route
-              path="/legal-advisor"
-              element={
-                <ProtectedRoute>
-                  {isAdmin ? <Navigate to="/admin" replace /> : <LegalAdvisor />}
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/appeal-generator"
-              element={
-                <ProtectedRoute>
-                  {isAdmin ? <Navigate to="/admin" replace /> : <AppealGenerator />}
-                </ProtectedRoute>
-              }
-            />
+            {/* Public AI Routes — no login required */}
+            <Route path="/legal-advisor" element={<LegalAdvisor />} />
+            <Route path="/appeal-generator" element={<AppealGenerator />} />
             <Route
               path="/story-wall"
               element={
