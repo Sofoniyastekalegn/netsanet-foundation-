@@ -200,27 +200,27 @@ async def generate_appeal(form: AppealForm, current_user: User = Depends(get_cur
 
 @app.post("/api/legal-advice-stream")
 async def legal_advice_stream(request: Request, db: Session = Depends(get_db)):
-    """Stream legal advice using Gemini — chunks sent as SSE, supports multi-turn history"""
+    """Stream legal advice using Gemini — no auth required (demo mode).
+    If a valid Bearer token is present the advice is also saved to the user's history."""
 
-    # --- manual auth ---
+    # --- optional auth: resolve user if token provided, else None ---
+    current_user = None
     auth_header = request.headers.get("Authorization", "")
-    if not auth_header.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    token_str = auth_header.split(" ", 1)[1]
-    payload = verify_token(token_str)
-    if not payload:
-        raise HTTPException(status_code=401, detail="Invalid token")
-    user_id = payload.get("sub")
-    current_user = db.query(User).filter(User.id == int(user_id)).first()
-    if not current_user or not current_user.is_active:
-        raise HTTPException(status_code=401, detail="User not found or inactive")
+    if auth_header.startswith("Bearer "):
+        token_str = auth_header.split(" ", 1)[1]
+        payload = verify_token(token_str)
+        if payload:
+            uid = payload.get("sub")
+            if uid:
+                current_user = db.query(User).filter(User.id == int(uid)).first()
+                if current_user and not current_user.is_active:
+                    current_user = None
 
     # --- parse body: { description, region, history } ---
     try:
         body = await request.json()
         description: str = body.get("description", "").strip()
         region: str = body.get("region", "") or ""
-        # history = list of {role: "user"|"model", parts: [{text: "..."}]}
         history: list = body.get("history", [])
     except Exception as e:
         raise HTTPException(status_code=422, detail=f"Invalid request body: {str(e)}")
@@ -231,7 +231,6 @@ async def legal_advice_stream(request: Request, db: Session = Depends(get_db)):
     if not model:
         raise HTTPException(status_code=503, detail="AI service not available")
 
-    # Build system context as the first user turn (only once, when history is empty)
     system_context = (
         "You are a compassionate and knowledgeable legal advisor specializing in Ethiopian law "
         "and women's rights. You provide clear, actionable, and empathetic guidance grounded in "
@@ -240,10 +239,8 @@ async def legal_advice_stream(request: Request, db: Session = Depends(get_db)):
         "the previous context."
     )
 
-    # Construct chat history for Gemini
     chat_history = []
     if not history:
-        # First turn: inject system context as a priming exchange
         chat_history = [
             {"role": "user", "parts": [{"text": system_context}]},
             {"role": "model", "parts": [{"text": "Understood. I am ready to provide legal guidance based on Ethiopian law and women's rights. Please describe your situation."}]},
@@ -251,7 +248,6 @@ async def legal_advice_stream(request: Request, db: Session = Depends(get_db)):
     else:
         chat_history = history
 
-    # The new user message
     user_message = description
     if region and not history:
         user_message += f"\n\nRegion: {region}"
@@ -270,19 +266,20 @@ async def legal_advice_stream(request: Request, db: Session = Depends(get_db)):
             yield f"data: {json.dumps({'error': str(e)})}\n\n"
             return
 
-        # Save to DB
-        try:
-            db_request = LegalAdviceRequest(
-                description=description,
-                region=region or None,
-                advice_generated=full_text,
-                case_type="classified_by_ai",
-                user_id=current_user.id,
-            )
-            db.add(db_request)
-            db.commit()
-        except Exception:
-            pass
+        # Save to DB only when a logged-in user made the request
+        if current_user:
+            try:
+                db_request = LegalAdviceRequest(
+                    description=description,
+                    region=region or None,
+                    advice_generated=full_text,
+                    case_type="classified_by_ai",
+                    user_id=current_user.id,
+                )
+                db.add(db_request)
+                db.commit()
+            except Exception:
+                pass
 
         yield f"data: {json.dumps({'done': True})}\n\n"
 
@@ -295,21 +292,21 @@ async def legal_advice_stream(request: Request, db: Session = Depends(get_db)):
 
 @app.post("/api/generate-appeal-stream")
 async def generate_appeal_stream(request: Request, db: Session = Depends(get_db)):
-    """Stream a formal appeal letter using Gemini — chunks sent as SSE.
-    Supports initial generation (formData present) and follow-up chat (followUp present)."""
+    """Stream a formal appeal letter using Gemini — no auth required (demo mode).
+    If a valid Bearer token is present the letter is also saved to the user's history."""
 
-    # --- manual auth ---
+    # --- optional auth ---
+    current_user = None
     auth_header = request.headers.get("Authorization", "")
-    if not auth_header.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    token_str = auth_header.split(" ", 1)[1]
-    payload = verify_token(token_str)
-    if not payload:
-        raise HTTPException(status_code=401, detail="Invalid token")
-    user_id = payload.get("sub")
-    current_user = db.query(User).filter(User.id == int(user_id)).first()
-    if not current_user or not current_user.is_active:
-        raise HTTPException(status_code=401, detail="User not found or inactive")
+    if auth_header.startswith("Bearer "):
+        token_str = auth_header.split(" ", 1)[1]
+        payload = verify_token(token_str)
+        if payload:
+            uid = payload.get("sub")
+            if uid:
+                current_user = db.query(User).filter(User.id == int(uid)).first()
+                if current_user and not current_user.is_active:
+                    current_user = None
 
     # --- parse body ---
     try:
@@ -322,19 +319,17 @@ async def generate_appeal_stream(request: Request, db: Session = Depends(get_db)
     if not model:
         raise HTTPException(status_code=503, detail="AI service not available")
 
-    # Determine what to send as the new user message
     if follow_up and history:
-        # Follow-up turn — use existing history
         chat_history = history
         user_message = follow_up
+        is_first_generation = False
     else:
-        # First generation — build from form fields
         try:
             form = AppealForm(**body)
         except Exception as e:
             raise HTTPException(status_code=422, detail=f"Invalid form data: {str(e)}")
-
-        chat_history = []  # fresh chat
+        chat_history = []
+        is_first_generation = True
         user_message = (
             f"Please generate a formal appeal letter in BOTH English and Amharic for this case:\n\n"
             f"Full Name: {form.name}\n"
@@ -367,14 +362,13 @@ async def generate_appeal_stream(request: Request, db: Session = Depends(get_db)
             yield f"data: {json.dumps({'error': str(e)})}\n\n"
             return
 
-        # Persist only on first generation (when there's no prior history)
-        if not (follow_up and history):
+        # Save to DB only on first generation and only when logged in
+        if is_first_generation and current_user:
             try:
                 english_match = re.search(r'ENGLISH VERSION:\s*([\s\S]*?)(?=AMHARIC VERSION:|$)', full_text, re.IGNORECASE)
                 amharic_match = re.search(r'AMHARIC VERSION:\s*([\s\S]*?)$', full_text, re.IGNORECASE)
                 english_letter = english_match.group(1).strip() if english_match else full_text
                 amharic_letter = amharic_match.group(1).strip() if amharic_match else ""
-
                 form_data = AppealForm(**body)
                 db_appeal = AppealLetter(
                     name=form_data.name,
