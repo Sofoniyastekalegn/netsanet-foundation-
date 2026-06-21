@@ -11,7 +11,6 @@ import {
     MapPin,
     Phone,
     Globe,
-    Users
 } from 'lucide-react';
 
 interface Organization {
