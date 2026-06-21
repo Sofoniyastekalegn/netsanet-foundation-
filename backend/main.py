@@ -1,18 +1,20 @@
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, AsyncGenerator
 import google.generativeai as genai
 import os
 from dotenv import load_dotenv
 import json
 import re
+import asyncio
 from sqlalchemy.orm import Session
 from database import get_db, engine
 from models import Base, Story, LegalAdviceRequest, AppealLetter, SupportOrganization, User
 from admin import router as admin_router
 from auth_routes import router as auth_router
-from auth import get_current_user, get_current_admin_user
+from auth import get_current_user, get_current_admin_user, verify_token
 from init_db import init_db
 
 # Load environment variables
@@ -195,6 +197,210 @@ async def generate_appeal(form: AppealForm, current_user: User = Depends(get_cur
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error generating appeal letter: {str(e)}")
+
+@app.post("/api/legal-advice-stream")
+async def legal_advice_stream(request: Request, db: Session = Depends(get_db)):
+    """Stream legal advice using Gemini — chunks sent as SSE, supports multi-turn history"""
+
+    # --- manual auth ---
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    token_str = auth_header.split(" ", 1)[1]
+    payload = verify_token(token_str)
+    if not payload:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    user_id = payload.get("sub")
+    current_user = db.query(User).filter(User.id == int(user_id)).first()
+    if not current_user or not current_user.is_active:
+        raise HTTPException(status_code=401, detail="User not found or inactive")
+
+    # --- parse body: { description, region, history } ---
+    try:
+        body = await request.json()
+        description: str = body.get("description", "").strip()
+        region: str = body.get("region", "") or ""
+        # history = list of {role: "user"|"model", parts: [{text: "..."}]}
+        history: list = body.get("history", [])
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=f"Invalid request body: {str(e)}")
+
+    if not description:
+        raise HTTPException(status_code=422, detail="description is required")
+
+    if not model:
+        raise HTTPException(status_code=503, detail="AI service not available")
+
+    # Build system context as the first user turn (only once, when history is empty)
+    system_context = (
+        "You are a compassionate and knowledgeable legal advisor specializing in Ethiopian law "
+        "and women's rights. You provide clear, actionable, and empathetic guidance grounded in "
+        "the Ethiopian Constitution, Family Law, Criminal Code, and relevant proclamations. "
+        "Always structure your responses clearly. If asked follow-up questions, continue from "
+        "the previous context."
+    )
+
+    # Construct chat history for Gemini
+    chat_history = []
+    if not history:
+        # First turn: inject system context as a priming exchange
+        chat_history = [
+            {"role": "user", "parts": [{"text": system_context}]},
+            {"role": "model", "parts": [{"text": "Understood. I am ready to provide legal guidance based on Ethiopian law and women's rights. Please describe your situation."}]},
+        ]
+    else:
+        chat_history = history
+
+    # The new user message
+    user_message = description
+    if region and not history:
+        user_message += f"\n\nRegion: {region}"
+
+    async def stream_advice():
+        full_text = ""
+        try:
+            chat = model.start_chat(history=chat_history)
+            response = chat.send_message(user_message, stream=True)
+            for chunk in response:
+                if chunk.text:
+                    full_text += chunk.text
+                    yield f"data: {json.dumps({'chunk': chunk.text})}\n\n"
+                    await asyncio.sleep(0)
+        except Exception as e:
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+            return
+
+        # Save to DB
+        try:
+            db_request = LegalAdviceRequest(
+                description=description,
+                region=region or None,
+                advice_generated=full_text,
+                case_type="classified_by_ai",
+                user_id=current_user.id,
+            )
+            db.add(db_request)
+            db.commit()
+        except Exception:
+            pass
+
+        yield f"data: {json.dumps({'done': True})}\n\n"
+
+    return StreamingResponse(
+        stream_advice(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@app.post("/api/generate-appeal-stream")
+async def generate_appeal_stream(request: Request, db: Session = Depends(get_db)):
+    """Stream a formal appeal letter using Gemini — chunks sent as SSE.
+    Supports initial generation (formData present) and follow-up chat (followUp present)."""
+
+    # --- manual auth ---
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    token_str = auth_header.split(" ", 1)[1]
+    payload = verify_token(token_str)
+    if not payload:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    user_id = payload.get("sub")
+    current_user = db.query(User).filter(User.id == int(user_id)).first()
+    if not current_user or not current_user.is_active:
+        raise HTTPException(status_code=401, detail="User not found or inactive")
+
+    # --- parse body ---
+    try:
+        body = await request.json()
+        follow_up: str = body.get("followUp", "").strip()
+        history: list = body.get("history", [])
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=f"Invalid request body: {str(e)}")
+
+    if not model:
+        raise HTTPException(status_code=503, detail="AI service not available")
+
+    # Determine what to send as the new user message
+    if follow_up and history:
+        # Follow-up turn — use existing history
+        chat_history = history
+        user_message = follow_up
+    else:
+        # First generation — build from form fields
+        try:
+            form = AppealForm(**body)
+        except Exception as e:
+            raise HTTPException(status_code=422, detail=f"Invalid form data: {str(e)}")
+
+        chat_history = []  # fresh chat
+        user_message = (
+            f"Please generate a formal appeal letter in BOTH English and Amharic for this case:\n\n"
+            f"Full Name: {form.name}\n"
+            f"Case Type: {form.case_type.replace('_', ' ').title()}\n"
+            f"Incident Date: {form.incident_date}\n"
+            f"Location: {form.location}\n"
+            f"Description: {form.description}\n"
+            f"Evidence Available: {form.evidence or 'Not specified'}\n"
+            f"Contact Information: {form.contact_info}\n\n"
+            f"Format EXACTLY as:\n\nENGLISH VERSION:\n[full English appeal letter]\n\nAMHARIC VERSION:\n[full Amharic translation]\n\n"
+            f"Keep both professional, empathetic, and grounded in Ethiopian law."
+        )
+
+    async def stream_and_save():
+        full_text = ""
+        try:
+            system_turn = [
+                {"role": "user", "parts": [{"text": "You are a legal assistant for Netsanet, an AI platform supporting women's rights in Ethiopia. Help users generate formal appeal letters and answer follow-up questions about their letters."}]},
+                {"role": "model", "parts": [{"text": "Understood. I will help generate formal, professional appeal letters grounded in Ethiopian law, and assist with any follow-up requests."}]},
+            ]
+            full_history = (system_turn + chat_history) if not chat_history else chat_history
+            chat = model.start_chat(history=full_history)
+            response = chat.send_message(user_message, stream=True)
+            for chunk in response:
+                if chunk.text:
+                    full_text += chunk.text
+                    yield f"data: {json.dumps({'chunk': chunk.text})}\n\n"
+                    await asyncio.sleep(0)
+        except Exception as e:
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+            return
+
+        # Persist only on first generation (when there's no prior history)
+        if not (follow_up and history):
+            try:
+                english_match = re.search(r'ENGLISH VERSION:\s*([\s\S]*?)(?=AMHARIC VERSION:|$)', full_text, re.IGNORECASE)
+                amharic_match = re.search(r'AMHARIC VERSION:\s*([\s\S]*?)$', full_text, re.IGNORECASE)
+                english_letter = english_match.group(1).strip() if english_match else full_text
+                amharic_letter = amharic_match.group(1).strip() if amharic_match else ""
+
+                form_data = AppealForm(**body)
+                db_appeal = AppealLetter(
+                    name=form_data.name,
+                    case_type=form_data.case_type,
+                    incident_date=form_data.incident_date,
+                    location=form_data.location,
+                    description=form_data.description,
+                    evidence=form_data.evidence,
+                    contact_info=form_data.contact_info,
+                    english_letter=english_letter,
+                    amharic_letter=amharic_letter,
+                    user_id=current_user.id,
+                )
+                db.add(db_appeal)
+                db.commit()
+            except Exception:
+                pass
+
+        yield f"data: {json.dumps({'done': True})}\n\n"
+
+    return StreamingResponse(
+        stream_and_save(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
 
 @app.get("/api/support-organizations")
 async def get_support_organizations(region: Optional[str] = None, db: Session = Depends(get_db)):
