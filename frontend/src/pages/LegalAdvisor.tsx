@@ -2,7 +2,6 @@ import { useState, useRef, useEffect } from 'react';
 import { Scale, Send, Copy, Download, RotateCcw, Bot, User, ChevronDown } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { useAuth } from '../contexts/AuthContext';
-import { useNavigate } from 'react-router-dom';
 
 // ── types ──────────────────────────────────────────────────────────────────────
 interface ChatMessage {
@@ -35,13 +34,16 @@ const API_BASE = 'http://localhost:8000';
 async function streamSSE(
     url: string,
     body: object,
-    token: string,
+    token: string | null,
     onChunk: (text: string) => void,
     signal: AbortSignal,
 ): Promise<void> {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
     const res = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        headers,
         body: JSON.stringify(body),
         signal,
     });
@@ -76,8 +78,7 @@ async function streamSSE(
 
 // ── component ──────────────────────────────────────────────────────────────────
 const LegalAdvisor = () => {
-    const { token, isAuthenticated } = useAuth();
-    const navigate = useNavigate();
+    const { token } = useAuth();
 
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [geminiHistory, setGeminiHistory] = useState<GeminiTurn[]>([]);
@@ -106,7 +107,6 @@ const LegalAdvisor = () => {
     // ── send message ──────────────────────────────────────────────────────────────
     const sendMessage = async (text: string) => {
         if (!text.trim() || streaming) return;
-        if (!isAuthenticated) { navigate('/login'); return; }
 
         setError('');
         const userMsg: ChatMessage = { role: 'user', content: text };
@@ -122,7 +122,7 @@ const LegalAdvisor = () => {
             await streamSSE(
                 `${API_BASE}/api/legal-advice-stream`,
                 { description: text, region: region || '', history: geminiHistory },
-                token!,
+                token,
                 (chunk) => {
                     fullResponse += chunk;
                     setMessages(prev => {
