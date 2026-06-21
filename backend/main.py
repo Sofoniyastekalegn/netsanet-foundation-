@@ -23,7 +23,7 @@ init_db()
 
 # Configure Gemini API
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-model = model = genai.GenerativeModel('gemini-2.0-flash')
+model = genai.GenerativeModel('gemini-1.5-flash')
 
 # Create database tables
 Base.metadata.create_all(bind=engine)
