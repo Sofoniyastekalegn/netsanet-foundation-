@@ -142,7 +142,14 @@ const AppealGenerator = () => {
             );
         } catch (err: any) {
             if (err.name === 'AbortError') return;
-            setError(err.message ?? 'Something went wrong. Please try again.');
+            const raw: string = err.message ?? '';
+            let friendly = 'Something went wrong. Please try again.';
+            if (raw.includes('429') || raw.toLowerCase().includes('quota') || raw.toLowerCase().includes('exceeded')) {
+                friendly = 'The AI service is temporarily unavailable due to high demand. Please try again in a minute.';
+            } else if (raw.includes('503') || raw.toLowerCase().includes('not available')) {
+                friendly = 'AI service is not configured. Please contact the administrator.';
+            }
+            setError(friendly);
             setMessages(prev => prev.slice(0, -1));
         } finally {
             setMessages(prev => {
