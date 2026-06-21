@@ -34,7 +34,7 @@ const CASE_TYPE_LABELS: Record<string, string> = {
     marital_rights: 'Marital Rights',
 };
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+const API_BASE = import.meta.env.VITE_API_BASE_URL || 'https://netsanet-foundation.onrender.com';
 
 // ── shared SSE streaming helper ────────────────────────────────────────────────
 async function streamSSE(
