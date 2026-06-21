@@ -2,7 +2,6 @@ import { useState, useRef, useEffect } from 'react';
 import { FileText, Send, Copy, Download, RotateCcw, Bot, User } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { useAuth } from '../contexts/AuthContext';
-import { useNavigate } from 'react-router-dom';
 
 // ── types ──────────────────────────────────────────────────────────────────────
 interface ChatMessage {
@@ -41,13 +40,16 @@ const API_BASE = 'http://localhost:8000';
 async function streamSSE(
     url: string,
     body: object,
-    token: string,
+    token: string | null,
     onChunk: (text: string) => void,
     signal: AbortSignal,
 ): Promise<void> {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
     const res = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        headers,
         body: JSON.stringify(body),
         signal,
     });
@@ -82,8 +84,7 @@ async function streamSSE(
 
 // ── component ──────────────────────────────────────────────────────────────────
 const AppealGenerator = () => {
-    const { token, isAuthenticated } = useAuth();
-    const navigate = useNavigate();
+    const { token } = useAuth();
 
     const [step, setStep] = useState<'form' | 'chat'>('form');
     const [formData, setFormData] = useState<FormData>({
@@ -112,8 +113,6 @@ const AppealGenerator = () => {
 
     // ── core streaming runner ──────────────────────────────────────────────────────
     const runStream = async (body: object, userBubbleText: string) => {
-        if (!isAuthenticated) { navigate('/login'); return; }
-
         const userMsg: ChatMessage = { role: 'user', content: userBubbleText };
         const assistantMsg: ChatMessage = { role: 'assistant', content: '', isStreaming: true };
         setMessages(prev => [...prev, userMsg, assistantMsg]);
@@ -127,7 +126,7 @@ const AppealGenerator = () => {
             await streamSSE(
                 `${API_BASE}/api/generate-appeal-stream`,
                 body,
-                token!,
+                token,
                 (chunk) => {
                     fullResponse += chunk;
                     setMessages(prev => {
@@ -166,7 +165,6 @@ const AppealGenerator = () => {
     // ── initial form submit ────────────────────────────────────────────────────────
     const handleFormSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!isAuthenticated) { navigate('/login'); return; }
 
         const userSummary =
             `Generate a formal appeal letter for my case:\n\n` +
@@ -363,8 +361,8 @@ const AppealGenerator = () => {
 
                                         <div className={`group max-w-[85%]`}>
                                             <div className={`rounded-2xl px-4 py-3 text-sm leading-relaxed shadow-sm ${msg.role === 'user'
-                                                    ? 'bg-primary-500 text-white rounded-tr-sm'
-                                                    : 'bg-white border border-gray-200 text-gray-900 rounded-tl-sm'
+                                                ? 'bg-primary-500 text-white rounded-tr-sm'
+                                                : 'bg-white border border-gray-200 text-gray-900 rounded-tl-sm'
                                                 }`}>
                                                 {msg.role === 'user' ? (
                                                     <div className="prose prose-sm prose-invert max-w-none">
