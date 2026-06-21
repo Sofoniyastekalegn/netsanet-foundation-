@@ -23,7 +23,7 @@ init_db()
 
 # Configure Gemini API
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-model = genai.GenerativeModel('gemini-1.5-flash')
+model = model = genai.GenerativeModel('gemini-2.0-flash')
 
 # Create database tables
 Base.metadata.create_all(bind=engine)
@@ -33,7 +33,12 @@ app = FastAPI(title="Netsanet API", description="AI-Powered Support for Women in
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "https://netsanet.aiwaveagency.com",
+        "https://www.netsanet.aiwaveagency.com",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

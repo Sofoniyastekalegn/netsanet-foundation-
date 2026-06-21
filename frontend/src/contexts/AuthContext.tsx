@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import type { ReactNode } from 'react';
 import axios from 'axios';
+import API_BASE_URL from '../config';
 
 interface User {
     id: number;
@@ -54,7 +55,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         const checkAuth = async () => {
             if (token) {
                 try {
-                    const response = await axios.get('http://localhost:8000/auth/me');
+                    const response = await axios.get(`${API_BASE_URL}/auth/me`);
                     setUser(response.data);
                 } catch (error) {
                     console.error('Auth check failed:', error);
@@ -69,7 +70,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
     const login = async (username: string, password: string): Promise<boolean> => {
         try {
-            const response = await axios.post('http://localhost:8000/auth/login', {
+            const response = await axios.post(`${API_BASE_URL}/auth/login`, {
                 username,
                 password
             });
@@ -89,7 +90,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
     const register = async (username: string, email: string, password: string): Promise<boolean> => {
         try {
-            const response = await axios.post('http://localhost:8000/auth/register', {
+            const response = await axios.post(`${API_BASE_URL}/auth/register`, {
                 username,
                 email,
                 password

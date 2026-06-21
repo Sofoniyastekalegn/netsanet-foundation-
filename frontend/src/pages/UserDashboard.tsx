@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
+import API_BASE_URL from '../config';
 import {
     FileText,
     MessageSquare,
@@ -55,9 +56,9 @@ const UserDashboard = () => {
     const fetchUserData = async () => {
         try {
             const [storiesResponse, legalResponse, appealsResponse] = await Promise.all([
-                axios.get('http://localhost:8000/api/my/stories'),
-                axios.get('http://localhost:8000/api/my/legal-advice'),
-                axios.get('http://localhost:8000/api/my/appeal-letters')
+                axios.get(`${API_BASE_URL}/api/my/stories`),
+                axios.get(`${API_BASE_URL}/api/my/legal-advice`),
+                axios.get(`${API_BASE_URL}/api/my/appeal-letters`)
             ]);
 
             setMyStories(storiesResponse.data.stories);
@@ -112,8 +113,8 @@ const UserDashboard = () => {
                         <button
                             onClick={() => setActiveTab('stories')}
                             className={`py-2 px-1 border-b-2 font-medium text-sm ${activeTab === 'stories'
-                                    ? 'border-primary-500 text-primary-600'
-                                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                                ? 'border-primary-500 text-primary-600'
+                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                                 }`}
                         >
                             My Stories ({myStories.length})
@@ -121,8 +122,8 @@ const UserDashboard = () => {
                         <button
                             onClick={() => setActiveTab('legal-advice')}
                             className={`py-2 px-1 border-b-2 font-medium text-sm ${activeTab === 'legal-advice'
-                                    ? 'border-primary-500 text-primary-600'
-                                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                                ? 'border-primary-500 text-primary-600'
+                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                                 }`}
                         >
                             Legal Advice ({legalAdvice.length})
@@ -130,8 +131,8 @@ const UserDashboard = () => {
                         <button
                             onClick={() => setActiveTab('appeal-letters')}
                             className={`py-2 px-1 border-b-2 font-medium text-sm ${activeTab === 'appeal-letters'
-                                    ? 'border-primary-500 text-primary-600'
-                                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                                ? 'border-primary-500 text-primary-600'
+                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                                 }`}
                         >
                             Appeal Letters ({appealLetters.length})

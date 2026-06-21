@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { BookOpen, Filter, Heart, CheckCircle, Clock } from 'lucide-react';
 import axios from 'axios';
 import { useAuth } from '../contexts/AuthContext';
+import API_BASE_URL from '../config';
 
 interface Story {
     id: number;
@@ -75,7 +76,7 @@ const CaseStories = () => {
 
     const fetchStories = async () => {
         try {
-            const response = await axios.get('http://localhost:8000/api/case-stories');
+            const response = await axios.get(`${API_BASE_URL}/api/case-stories`);
             setStories(response.data.stories);
             setFilteredStories(response.data.stories);
         } catch (error) {
@@ -87,7 +88,7 @@ const CaseStories = () => {
 
     const approveStory = async (storyId: number) => {
         try {
-            await axios.post(`http://localhost:8000/api/approve-story/${storyId}`);
+            await axios.post(`${API_BASE_URL}/api/approve-story/${storyId}`);
             // Refresh stories after approval
             fetchStories();
             alert('Story approved successfully!');

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
+import API_BASE_URL from '../config';
 import {
     Building,
     Plus,
@@ -82,7 +83,7 @@ const OrganizationManager = () => {
 
     const fetchOrganizations = async () => {
         try {
-            const response = await axios.get('http://localhost:8000/admin/organizations');
+            const response = await axios.get(`${API_BASE_URL}/admin/organizations`);
             setOrganizations(response.data.organizations);
         } catch (error) {
             console.error('Error fetching organizations:', error);
@@ -158,12 +159,12 @@ const OrganizationManager = () => {
                 ...formData,
                 website: formattedWebsite
             };
-            
+
             if (editingOrg) {
-                await axios.put(`http://localhost:8000/admin/organizations/${editingOrg.id}`, submitData);
+                await axios.put(`${API_BASE_URL}/admin/organizations/${editingOrg.id}`, submitData);
                 alert('Organization updated successfully!');
             } else {
-                await axios.post('http://localhost:8000/admin/organizations', submitData);
+                await axios.post(`${API_BASE_URL}/admin/organizations`, submitData);
                 alert('Organization created successfully!');
             }
 
@@ -194,7 +195,7 @@ const OrganizationManager = () => {
         }
 
         try {
-            await axios.delete(`http://localhost:8000/admin/organizations/${orgId}`);
+            await axios.delete(`${API_BASE_URL}/admin/organizations/${orgId}`);
             alert('Organization deleted successfully!');
             fetchOrganizations();
         } catch (error) {
@@ -205,7 +206,7 @@ const OrganizationManager = () => {
 
     const toggleActive = async (org: Organization) => {
         try {
-            await axios.put(`http://localhost:8000/admin/organizations/${org.id}`, {
+            await axios.put(`${API_BASE_URL}/admin/organizations/${org.id}`, {
                 ...org,
                 is_active: !org.is_active
             });
@@ -355,8 +356,8 @@ const OrganizationManager = () => {
                                             onClick={() => addCommonService(service)}
                                             disabled={formData.services.includes(service)}
                                             className={`px-3 py-1 rounded-full text-xs font-medium ${formData.services.includes(service)
-                                                    ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
-                                                    : 'bg-blue-100 text-blue-700 hover:bg-blue-200'
+                                                ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                                                : 'bg-blue-100 text-blue-700 hover:bg-blue-200'
                                                 }`}
                                         >
                                             {service}
@@ -478,8 +479,8 @@ const OrganizationManager = () => {
                                             </div>
                                             <div className="flex items-center gap-2">
                                                 <span className={`px-2 py-1 rounded-full text-xs font-medium ${org.is_active
-                                                        ? 'bg-green-100 text-green-800'
-                                                        : 'bg-red-100 text-red-800'
+                                                    ? 'bg-green-100 text-green-800'
+                                                    : 'bg-red-100 text-red-800'
                                                     }`}>
                                                     {org.is_active ? 'Active' : 'Inactive'}
                                                 </span>
@@ -512,8 +513,8 @@ const OrganizationManager = () => {
                                         <button
                                             onClick={() => toggleActive(org)}
                                             className={`px-3 py-1 rounded text-sm flex items-center ${org.is_active
-                                                    ? 'bg-yellow-600 hover:bg-yellow-700 text-white'
-                                                    : 'bg-green-600 hover:bg-green-700 text-white'
+                                                ? 'bg-yellow-600 hover:bg-yellow-700 text-white'
+                                                : 'bg-green-600 hover:bg-green-700 text-white'
                                                 }`}
                                         >
                                             {org.is_active ? 'Deactivate' : 'Activate'}

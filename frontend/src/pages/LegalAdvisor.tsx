@@ -28,7 +28,7 @@ const SUGGESTED = [
     'I want to file for divorce but have no money for a lawyer.',
 ];
 
-const API_BASE = 'http://localhost:8000';
+const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 
 // ── shared SSE streaming helper ────────────────────────────────────────────────
 async function streamSSE(

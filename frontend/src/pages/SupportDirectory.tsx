@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Users, Phone, MapPin, Globe, Filter } from 'lucide-react';
 import axios from 'axios';
+import API_BASE_URL from '../config';
 
 interface Organization {
     name: string;
@@ -46,7 +47,7 @@ const SupportDirectory = () => {
 
     const fetchOrganizations = async () => {
         try {
-            const response = await axios.get('http://localhost:8000/api/support-organizations');
+            const response = await axios.get(`${API_BASE_URL}/api/support-organizations`);
             setOrganizations(response.data.organizations);
             setFilteredOrgs(response.data.organizations);
         } catch (error) {

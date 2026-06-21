@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
+import API_BASE_URL from '../config';
 import {
     Users,
     FileText,
@@ -47,8 +48,8 @@ const AdminDashboard = () => {
     const fetchData = async () => {
         try {
             const [statsResponse, pendingResponse] = await Promise.all([
-                axios.get('http://localhost:8000/admin/stats'),
-                axios.get('http://localhost:8000/admin/stories/pending')
+                axios.get(`${API_BASE_URL}/admin/stats`),
+                axios.get(`${API_BASE_URL}/admin/stories/pending`)
             ]);
 
             setStats(statsResponse.data);
@@ -62,7 +63,7 @@ const AdminDashboard = () => {
 
     const approveStory = async (storyId: number) => {
         try {
-            await axios.post(`http://localhost:8000/admin/stories/approve`, {
+            await axios.post(`${API_BASE_URL}/admin/stories/approve`, {
                 story_id: storyId,
                 approved: true
             });
@@ -86,7 +87,7 @@ const AdminDashboard = () => {
 
     const rejectStory = async (storyId: number) => {
         try {
-            await axios.post(`http://localhost:8000/admin/stories/approve`, {
+            await axios.post(`${API_BASE_URL}/admin/stories/approve`, {
                 story_id: storyId,
                 approved: false
             });
@@ -113,7 +114,7 @@ const AdminDashboard = () => {
         }
 
         try {
-            await axios.delete(`http://localhost:8000/admin/stories/${storyId}`);
+            await axios.delete(`${API_BASE_URL}/admin/stories/${storyId}`);
 
             // Remove from pending list and update stats
             setPendingStories(prev => prev.filter(story => story.id !== storyId));

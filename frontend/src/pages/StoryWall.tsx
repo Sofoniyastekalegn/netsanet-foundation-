@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Heart, Send } from 'lucide-react';
 import axios from 'axios';
+import API_BASE_URL from '../config';
 
 const StoryWall = () => {
     const [formData, setFormData] = useState({
@@ -59,7 +60,7 @@ const StoryWall = () => {
         setError('');
 
         try {
-            await axios.post('http://localhost:8000/api/submit-story', formData);
+            await axios.post(`${API_BASE_URL}/api/submit-story`, formData);
             setIsSubmitted(true);
         } catch (error: any) {
             console.error('Error submitting story:', error);
