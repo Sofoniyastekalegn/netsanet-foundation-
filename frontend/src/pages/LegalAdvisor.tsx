@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { Scale, Send, Copy, Download, RotateCcw, Bot, User, ChevronDown } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { useAuth } from '../contexts/AuthContext';
+import { useLanguage } from '../contexts/LanguageContext';
 
 // ── types ──────────────────────────────────────────────────────────────────────
 interface ChatMessage {
@@ -79,6 +80,7 @@ async function streamSSE(
 // ── component ──────────────────────────────────────────────────────────────────
 const LegalAdvisor = () => {
     const { token } = useAuth();
+    const { t } = useLanguage();
 
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [geminiHistory, setGeminiHistory] = useState<GeminiTurn[]>([]);
@@ -136,9 +138,9 @@ const LegalAdvisor = () => {
         } catch (err: any) {
             if (err.name === 'AbortError') return;
             const raw: string = err.message ?? '';
-            let friendly = 'Something went wrong. Please try again.';
+            let friendly = t('general.error');
             if (raw.includes('429') || raw.toLowerCase().includes('quota') || raw.toLowerCase().includes('exceeded')) {
-                friendly = 'The AI service is temporarily unavailable due to high demand. Please try again in a minute.';
+                friendly = t('general.quota');
             } else if (raw.includes('503') || raw.toLowerCase().includes('not available')) {
                 friendly = 'AI service is not configured. Please contact the administrator.';
             }
@@ -194,10 +196,10 @@ const LegalAdvisor = () => {
                 <div className="text-center mb-5">
                     <div className="flex items-center justify-center gap-2 mb-2">
                         <Scale className="w-7 h-7 text-primary-500" />
-                        <h1 className="text-2xl font-bold text-gray-900">AI Legal Advisor</h1>
+                        <h1 className="text-2xl font-bold text-gray-900">{t('legal.title')}</h1>
                     </div>
                     <p className="text-sm text-gray-500">
-                        Personalized legal guidance based on Ethiopian law and women's rights
+                        {t('legal.subtitle')}
                     </p>
                 </div>
 
@@ -215,7 +217,7 @@ const LegalAdvisor = () => {
                                         <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary-400 opacity-75" />
                                         <span className="relative inline-flex rounded-full h-2 w-2 bg-primary-500" />
                                     </span>
-                                    Thinking…
+                                    {t('legal.thinking')}
                                 </span>
                             )}
                         </div>
@@ -225,7 +227,7 @@ const LegalAdvisor = () => {
                                 onClick={() => setShowRegion(v => !v)}
                                 className="flex items-center gap-1 text-xs text-gray-500 border border-gray-200 rounded-full px-3 py-1 hover:bg-gray-100 transition-colors"
                             >
-                                {region || 'Region'}
+                                {region || t('legal.region')}
                                 <ChevronDown className="w-3 h-3" />
                             </button>
                             {!isFirstMessage && (
@@ -234,7 +236,7 @@ const LegalAdvisor = () => {
                                     className="flex items-center gap-1 text-xs text-gray-500 border border-gray-200 rounded-full px-3 py-1 hover:bg-gray-100 transition-colors"
                                 >
                                     <RotateCcw className="w-3 h-3" />
-                                    New chat
+                                    {t('legal.newChat')}
                                 </button>
                             )}
                         </div>
@@ -262,9 +264,9 @@ const LegalAdvisor = () => {
                                 <div className="w-14 h-14 rounded-full bg-primary-100 flex items-center justify-center mb-4">
                                     <Scale className="w-7 h-7 text-primary-500" />
                                 </div>
-                                <h2 className="text-lg font-semibold text-gray-800 mb-1">How can I help you today?</h2>
+                                <h2 className="text-lg font-semibold text-gray-800 mb-1">{t('legal.welcome')}</h2>
                                 <p className="text-sm text-gray-500 mb-6 max-w-sm">
-                                    Ask me anything about your legal situation — I'll give you guidance based on Ethiopian law.
+                                    {t('legal.welcomeDesc')}
                                 </p>
                                 {/* Suggested prompts */}
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full max-w-lg">
@@ -317,14 +319,14 @@ const LegalAdvisor = () => {
                                                 className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 px-2 py-1 rounded hover:bg-gray-100 transition-colors"
                                                 title="Copy"
                                             >
-                                                <Copy className="w-3 h-3" /> Copy
+                                                <Copy className="w-3 h-3" /> {t('general.copy')}
                                             </button>
                                             <button
                                                 onClick={() => downloadMsg(msg.content)}
                                                 className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 px-2 py-1 rounded hover:bg-gray-100 transition-colors"
                                                 title="Download"
                                             >
-                                                <Download className="w-3 h-3" /> Save
+                                                <Download className="w-3 h-3" /> {t('general.save')}
                                             </button>
                                         </div>
                                     )}
@@ -357,7 +359,7 @@ const LegalAdvisor = () => {
                                 disabled={streaming}
                                 rows={1}
                                 className="flex-1 bg-transparent text-sm text-gray-800 placeholder-gray-400 resize-none outline-none py-1 min-h-[24px]"
-                                placeholder="Describe your situation or ask a follow-up question…"
+                                placeholder={t('legal.placeholder')}
                             />
                             <button
                                 onClick={() => sendMessage(input)}

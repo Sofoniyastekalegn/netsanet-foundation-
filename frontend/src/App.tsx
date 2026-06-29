@@ -1,5 +1,6 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { LanguageProvider } from './contexts/LanguageContext';
 import Navbar from './components/Navbar';
 import Home from './pages/Home';
 import LegalAdvisor from './pages/LegalAdvisor';
@@ -99,9 +100,11 @@ const AppContent = () => {
 // Main App Component with Auth Provider
 const App = () => {
   return (
-    <AuthProvider>
-      <AppContent />
-    </AuthProvider>
+    <LanguageProvider>
+      <AuthProvider>
+        <AppContent />
+      </AuthProvider>
+    </LanguageProvider>
   );
 };
 
