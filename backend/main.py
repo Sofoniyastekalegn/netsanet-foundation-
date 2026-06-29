@@ -3,7 +3,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import Optional, AsyncGenerator
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 import os
 from dotenv import load_dotenv
 import json
@@ -21,12 +22,9 @@ from init_db import init_db
 load_dotenv()
 init_db()
 
-# Configure Gemini API
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-model = genai.GenerativeModel(
-    model_name='gemini-1.5-flash',
-    client_options={"api_endpoint": "generativelanguage.googleapis.com"}
-)
+# Configure Gemini API (new SDK uses v1 by default)
+client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+GEMINI_MODEL = "gemini-2.0-flash"
 
 # Create database tables
 Base.metadata.create_all(bind=engine)
@@ -112,7 +110,10 @@ async def get_legal_advice(case: CaseDescription, current_user: User = Depends(g
         Be supportive, clear, and provide practical advice. Focus on Ethiopian legal context. Do not include any introductory text or explanations outside of the structured format above.
         """
         
-        response = model.generate_content(prompt)
+        response = client.models.generate_content(
+            model=GEMINI_MODEL,
+            contents=prompt
+        )
         advice = response.text
         
         # Store the request in database with user_id
@@ -172,7 +173,10 @@ async def generate_appeal(form: AppealForm, current_user: User = Depends(get_cur
         [Complete Amharic appeal letter with proper formatting]
         """
         
-        response = model.generate_content(prompt)
+        response = client.models.generate_content(
+            model=GEMINI_MODEL,
+            contents=prompt
+        )
         appeal_letter = response.text
         
         # Parse the response to separate English and Amharic versions
@@ -263,8 +267,26 @@ async def legal_advice_stream(request: Request, db: Session = Depends(get_db)):
     async def stream_advice():
         full_text = ""
         try:
-            chat = model.start_chat(history=chat_history)
-            response = chat.send_message(user_message, stream=True)
+            # Build conversation history for the new SDK
+            contents = []
+            if not history:
+                contents = [
+                    types.Content(role="user", parts=[types.Part(text=system_context)]),
+                    types.Content(role="model", parts=[types.Part(text="Understood. I am ready to provide legal guidance based on Ethiopian law and women's rights. Please describe your situation.")]),
+                    types.Content(role="user", parts=[types.Part(text=user_message)]),
+                ]
+            else:
+                for h in history:
+                    contents.append(types.Content(
+                        role=h["role"],
+                        parts=[types.Part(text=p["text"]) for p in h["parts"]]
+                    ))
+                contents.append(types.Content(role="user", parts=[types.Part(text=user_message)]))
+
+            response = client.models.generate_content_stream(
+                model=GEMINI_MODEL,
+                contents=contents,
+            )
             for chunk in response:
                 if chunk.text:
                     full_text += chunk.text
@@ -354,13 +376,25 @@ async def generate_appeal_stream(request: Request, db: Session = Depends(get_db)
     async def stream_and_save():
         full_text = ""
         try:
-            system_turn = [
-                {"role": "user", "parts": [{"text": "You are a legal assistant for Netsanet, an AI platform supporting women's rights in Ethiopia. Help users generate formal appeal letters and answer follow-up questions about their letters."}]},
-                {"role": "model", "parts": [{"text": "Understood. I will help generate formal, professional appeal letters grounded in Ethiopian law, and assist with any follow-up requests."}]},
+            contents = []
+            system_msgs = [
+                types.Content(role="user", parts=[types.Part(text="You are a legal assistant for Netsanet, an AI platform supporting women's rights in Ethiopia. Help users generate formal appeal letters and answer follow-up questions about their letters.")]),
+                types.Content(role="model", parts=[types.Part(text="Understood. I will help generate formal, professional appeal letters grounded in Ethiopian law, and assist with any follow-up requests.")]),
             ]
-            full_history = (system_turn + chat_history) if not chat_history else chat_history
-            chat = model.start_chat(history=full_history)
-            response = chat.send_message(user_message, stream=True)
+            if not chat_history:
+                contents = system_msgs + [types.Content(role="user", parts=[types.Part(text=user_message)])]
+            else:
+                for h in chat_history:
+                    contents.append(types.Content(
+                        role=h["role"],
+                        parts=[types.Part(text=p["text"]) for p in h["parts"]]
+                    ))
+                contents.append(types.Content(role="user", parts=[types.Part(text=user_message)]))
+
+            response = client.models.generate_content_stream(
+                model=GEMINI_MODEL,
+                contents=contents,
+            )
             for chunk in response:
                 if chunk.text:
                     full_text += chunk.text
