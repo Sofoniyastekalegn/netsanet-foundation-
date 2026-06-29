@@ -10,8 +10,11 @@ import {
   Globe,
 } from "lucide-react";
 import { useState, useEffect } from "react";
+import { useLanguage } from "../contexts/LanguageContext";
 
 const Home = () => {
+  const { t } = useLanguage();
+
   const images = [
     "/women1.jpeg",
     "/women2.jpg",
@@ -26,49 +29,43 @@ const Home = () => {
       setCurrentImageIndex((prevIndex) =>
         prevIndex === images.length - 1 ? 0 : prevIndex + 1
       );
-    }, 4000); // Change image every 4 seconds
-
+    }, 4000);
     return () => clearInterval(interval);
   }, [images.length]);
 
   const features = [
     {
       icon: Scale,
-      title: "AI Legal Advisor",
-      description:
-        "Get personalized legal guidance based on Ethiopian law and your specific situation.",
+      title: t('home.feature1.title'),
+      description: t('home.feature1.desc'),
       path: "/legal-advisor",
       color: "bg-blue-500",
     },
     {
       icon: FileText,
-      title: "Appeal Generator",
-      description:
-        "Generate formal appeal letters in both Amharic and English for your case.",
+      title: t('home.feature2.title'),
+      description: t('home.feature2.desc'),
       path: "/appeal-generator",
       color: "bg-green-500",
     },
     {
       icon: Users,
-      title: "Support Directory",
-      description:
-        "Find nearby legal aid organizations and support services in your region.",
+      title: t('home.feature3.title'),
+      description: t('home.feature3.desc'),
       path: "/support-directory",
       color: "bg-purple-500",
     },
     {
       icon: BookOpen,
-      title: "Case Stories",
-      description:
-        "Read inspiring stories from other women who have overcome similar challenges.",
+      title: t('home.feature4.title'),
+      description: t('home.feature4.desc'),
       path: "/case-stories",
       color: "bg-orange-500",
     },
     {
       icon: MessageCircle,
-      title: "Story Wall",
-      description:
-        "Share your experiences anonymously and connect with others.",
+      title: t('home.feature5.title'),
+      description: t('home.feature5.desc'),
       path: "/story-wall",
       color: "bg-pink-500",
     },
@@ -83,28 +80,25 @@ const Home = () => {
             <div className="text-center lg:text-left">
               <h1 className="flex items-center gap-4 text-5xl font-bold mb-4">
                 <Heart className="w-12 h-12" />
-                Netsanet
+                {t('home.hero.title')}
               </h1>
               <p className="text-2xl mb-5 opacity-90">
-                AI-Powered Support for Women in Ethiopia
+                {t('home.hero.subtitle')}
               </p>
               <p className="text-lg mb-8 opacity-80 leading-relaxed">
-                Get legal guidance, generate formal appeals, and connect with
-                support organizations. You're not alone in your journey toward
-                justice and empowerment.
+                {t('home.hero.desc')}
               </p>
               <div className="flex gap-4 justify-center lg:justify-start">
                 <Link to="/legal-advisor" className="btn btn-primary">
-                  Get Legal Advice
+                  {t('home.hero.cta1')}
                 </Link>
                 <Link to="/support-directory" className="btn btn-secondary">
-                  Find Support
+                  {t('home.hero.cta2')}
                 </Link>
               </div>
             </div>
             <div className="flex items-center justify-center lg:justify-end">
               <div className="relative w-full max-w-md lg:max-w-lg xl:max-w-xl h-64 sm:h-80 lg:h-96 xl:h-[28rem] rounded-2xl overflow-hidden shadow-2xl">
-                {/* Carousel Images */}
                 {images.map((image, index) => (
                   <div
                     key={index}
@@ -116,12 +110,9 @@ const Home = () => {
                       alt={`Empowered women ${index + 1}`}
                       className="w-full h-full object-cover"
                     />
-                    {/* Overlay for better text contrast */}
                     <div className="absolute inset-0 bg-gradient-to-t from-black/30 via-transparent to-transparent"></div>
                   </div>
                 ))}
-
-                {/* Carousel Indicators */}
                 <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 flex space-x-3">
                   {images.map((_, index) => (
                     <button
@@ -145,7 +136,7 @@ const Home = () => {
       <section className="py-20 bg-white">
         <div className="max-w-7xl mx-auto px-5">
           <h2 className="text-center text-4xl font-bold mb-15 text-gray-900">
-            How We Can Help You
+            {t('home.features.title')}
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
             {features.map((feature, index) => {
@@ -156,9 +147,7 @@ const Home = () => {
                   to={feature.path}
                   className="card hover:-translate-y-1 hover:shadow-lg transition-all duration-300"
                 >
-                  <div
-                    className={`w-15 h-15 rounded-full flex items-center justify-center mb-5 ${feature.color}`}
-                  >
+                  <div className={`w-15 h-15 rounded-full flex items-center justify-center mb-5 ${feature.color}`}>
                     <Icon className="w-8 h-8 text-white" />
                   </div>
                   <h3 className="text-xl font-semibold mb-3 text-gray-900">
@@ -180,50 +169,38 @@ const Home = () => {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-15">
             <div className="lg:col-span-2">
               <h2 className="text-4xl font-bold mb-6 text-gray-900">
-                About Netsanet
+                {t('home.about.title')}
               </h2>
               <p className="text-gray-600 mb-5 leading-relaxed">
-                Netsanet is dedicated to supporting women in Ethiopia who
-                experience abuse and discrimination. Our AI-powered platform
-                provides:
+                {t('home.about.desc1')}
               </p>
               <ul className="mb-5 space-y-2">
-                <li className="text-gray-600">
-                  • Legal guidance based on Ethiopian Constitution and laws
-                </li>
-                <li className="text-gray-600">
-                  • Formal appeal letter generation in multiple languages
-                </li>
-                <li className="text-gray-600">
-                  • Directory of local support organizations
-                </li>
-                <li className="text-gray-600">
-                  • Community of shared experiences and support
-                </li>
+                <li className="text-gray-600">{t('home.about.item1')}</li>
+                <li className="text-gray-600">{t('home.about.item2')}</li>
+                <li className="text-gray-600">{t('home.about.item3')}</li>
+                <li className="text-gray-600">{t('home.about.item4')}</li>
               </ul>
               <p className="text-gray-600 leading-relaxed">
-                We believe every woman deserves access to justice and support.
-                Your rights matter, and we're here to help you navigate the
-                legal system.
+                {t('home.about.desc2')}
               </p>
             </div>
             <div className="space-y-8">
               <div className="card">
                 <Globe className="w-10 h-10 text-primary-500 mb-4" />
                 <h3 className="text-lg font-semibold mb-2 text-gray-900">
-                  Ethiopia-wide
+                  {t('home.about.wide')}
                 </h3>
                 <p className="text-gray-600 text-sm">
-                  Support available across all regions
+                  {t('home.about.wideDesc')}
                 </p>
               </div>
               <div className="card">
                 <Shield className="w-10 h-10 text-primary-500 mb-4" />
                 <h3 className="text-lg font-semibold mb-2 text-gray-900">
-                  Confidential
+                  {t('home.about.confidential')}
                 </h3>
                 <p className="text-gray-600 text-sm">
-                  Your privacy and safety are our priority
+                  {t('home.about.confidentialDesc')}
                 </p>
               </div>
             </div>
@@ -234,12 +211,10 @@ const Home = () => {
       {/* CTA Section */}
       <section className="py-20 bg-primary-500 text-center">
         <div className="max-w-7xl mx-auto px-5">
-          <h2 className="text-4xl font-bold mb-4">Ready to Get Started?</h2>
-          <p className="text-xl mb-8 opacity-90">
-            Take the first step toward justice and empowerment
-          </p>
+          <h2 className="text-4xl font-bold mb-4">{t('home.cta.title')}</h2>
+          <p className="text-xl mb-8 opacity-90">{t('home.cta.subtitle')}</p>
           <Link to="/legal-advisor" className="btn btn-primary btn-large">
-            Start Your Journey
+            {t('home.cta.button')}
           </Link>
         </div>
       </section>
